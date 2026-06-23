@@ -55,7 +55,7 @@ nevinfotech-portal/
 │  ├─ types/index.ts                 # Shared types + accepted file types
 │  └─ middleware.ts                  # Route protection + email-verification gate
 ├─ supabase/schema.sql                # Tables, indexes, RLS policies
-├─ wrangler.toml / open-next.config.ts# Cloudflare Pages deployment config
+├─ wrangler.jsonc / open-next.config.ts# Cloudflare Worker deployment config
 └─ .env.example
 ```
 
@@ -188,12 +188,18 @@ git push -u origin main
 
 ---
 
-## 9. Deploying to Cloudflare Pages
+## 9. Deploying to Cloudflare
 
-Next.js 15's App Router (Server Components, Route Handlers, middleware) is served on
-Cloudflare Pages through the **OpenNext Cloudflare adapter**, which is already wired up
-in this project (`open-next.config.ts`, `wrangler.toml`, and the `cf:*` scripts in
-`package.json`).
+Next.js 15's App Router (Server Components, Route Handlers, middleware) runs on Cloudflare
+via the **OpenNext Cloudflare adapter** (`@opennextjs/cloudflare`). As of the current
+adapter version, this deploys your app as a single **Cloudflare Worker with a static
+assets binding** — not a classic Cloudflare Pages project. Wrangler's `deploy` command
+handles both the server code and the static assets in one step, so there's no separate
+"Pages build output directory" setting to configure.
+
+Required versions: **Node.js 20+**, **Wrangler 3.99.0+** (this project pins `^4.0.0`),
+and **`@opennextjs/cloudflare` 1.x** (older `0.x` releases used a different,
+non-subcommand CLI and are not compatible with these instructions).
 
 ### Option A — CLI deploy
 
@@ -201,28 +207,63 @@ in this project (`open-next.config.ts`, `wrangler.toml`, and the `cf:*` scripts 
 npm install -g wrangler
 wrangler login
 
-# Build the OpenNext output and deploy
-npm run cf:deploy
+# Builds the Next.js app with OpenNext, then deploys the Worker + assets
+npm run deploy
 ```
 
-### Option B — Connect the GitHub repo in the dashboard
+Other useful scripts (already in `package.json`):
 
-1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**.
+```bash
+npm run preview     # Build, then run it locally in the real Workers runtime
+npm run upload       # Build, then upload a new Worker *version* without making it live
+                      # (use this for non-production/preview branches; promote later
+                      # via Gradual Deployments in the dashboard)
+npm run cf-typegen   # Generate cloudflare-env.d.ts with types for your bindings
+```
+
+Before your first deploy, set the secrets the Worker needs (anything not safe to
+commit — everything from `.env.example` except `NEXT_PUBLIC_SITE_URL`):
+
+```bash
+wrangler secret put NEXT_PUBLIC_SUPABASE_URL
+wrangler secret put NEXT_PUBLIC_SUPABASE_ANON_KEY
+wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+wrangler secret put R2_ACCOUNT_ID
+wrangler secret put R2_ACCESS_KEY_ID
+wrangler secret put R2_SECRET_ACCESS_KEY
+wrangler secret put R2_BUCKET_NAME
+wrangler secret put R2_ENDPOINT
+wrangler secret put R2_PUBLIC_BASE_URL
+```
+
+Update the `vars.NEXT_PUBLIC_SITE_URL` value in `wrangler.jsonc` to your real
+`*.workers.dev` URL (or custom domain) once you know it.
+
+### Option B — Connect the GitHub repo (Workers Builds)
+
+1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Workers** →
+   **Connect to Git** (this is "Workers Builds" — the current CI path for full-stack
+   Next.js apps; it replaces the older Pages "Git integration" flow for this use case).
 2. Select your `nevinfotech-portal` repo.
 3. Build settings:
-   * Build command: `npx opennextjs-cloudflare build`
-   * Build output directory: `.open-next/assets`
-4. Add every variable from `.env.example` under **Settings → Environment Variables**
-   (Production and Preview). Mark the service-role key and R2 secrets as **Secret**.
-5. Trigger a deploy. Cloudflare will rebuild on every push to `main`.
+   * Build command: `npm run deploy` (this runs `opennextjs-cloudflare build` then
+     `opennextjs-cloudflare deploy` for you)
+   * Deploy command: leave as the default (`npx wrangler deploy`), since `npm run deploy`
+     already builds and deploys in one step — or set Build command to `npm run build`
+     only and let the dashboard's own Deploy command run `wrangler deploy` separately.
+4. Add every variable from `.env.example` under **Settings → Variables and Secrets**.
+   Mark the service-role key and all `R2_*` values as **Secret** (encrypted).
+5. Trigger a deploy. Cloudflare rebuilds on every push to `main`.
 
 ### After first deploy
 
-* Update Supabase **Site URL** and **Redirect URLs** to your `*.pages.dev` (or custom)
-  domain, and update the Google/Microsoft OAuth app redirect URIs to match the
-  Supabase callback URL (these point at Supabase, not at your app, so they usually
-  don't need to change once set correctly in step 4 of the Supabase setup).
-* Update the R2 bucket CORS policy to include your production domain.
+* Update Supabase **Site URL** and **Redirect URLs** to your `*.workers.dev` (or custom)
+  domain.
+* Update the R2 bucket CORS policy to include that same production domain.
+* If you see `ERROR Could not find compiled Open Next config, did you run the build
+  command?` during deploy, it means the deploy step ran without first running the
+  OpenNext build — make sure your dashboard "Build command" actually runs
+  `opennextjs-cloudflare build` (or use `npm run deploy`, which chains build + deploy).
 
 ---
 
