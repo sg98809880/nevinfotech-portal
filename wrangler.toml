@@ -1,12 +1,6 @@
 name = "nevinfotech-portal"
-compatibility_date = "2024-12-30"
+
+compatibility_date = "2025-06-01"
 compatibility_flags = ["nodejs_compat"]
+
 pages_build_output_dir = ".open-next/assets"
-
-[vars]
-NEXT_PUBLIC_SITE_URL = "https://nevinfotech-portal.pages.dev"
-
-# Secrets (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
-# SUPABASE_SERVICE_ROLE_KEY, R2_* ) are set via:
-#   wrangler pages secret put VAR_NAME
-# or in the Cloudflare Pages dashboard → Settings → Environment Variables
