@@ -18,7 +18,16 @@ export async function POST(request: Request) {
         { status: 401 }
       );
     }
-
+console.log("ACCOUNT", process.env.CLOUDFLARE_ACCOUNT_ID);
+console.log("BUCKET", process.env.R2_BUCKET_NAME);
+console.log(
+  "KEY EXISTS",
+  !!process.env.R2_ACCESS_KEY_ID
+);
+console.log(
+  "SECRET EXISTS",
+  !!process.env.R2_SECRET_ACCESS_KEY
+);
     const body = await request.json();
 
     const {
