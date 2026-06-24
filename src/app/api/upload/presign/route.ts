@@ -5,44 +5,91 @@ import { buildFileKey, getPresignedUploadUrl } from "@/lib/r2";
 import { ACCEPTED_FILE_TYPES, MAX_FILE_SIZE_BYTES } from "@/types";
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  try {
+    const supabase = await createClient();
 
-  if (!user) {
-    return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
-  }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  const { companyId, fileName, fileType, fileSize } = await request.json();
+    if (!user) {
+      return NextResponse.json(
+        { error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
 
-  if (!companyId || !fileName || !fileType) {
-    return NextResponse.json({ error: "companyId, fileName and fileType are required." }, { status: 400 });
-  }
+    const body = await request.json();
 
-  if (!ACCEPTED_FILE_TYPES[fileType]) {
+    const {
+      companyId,
+      fileName,
+      fileType,
+      fileSize
+    } = body;
+
+    if (!companyId || !fileName || !fileType) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    if (!ACCEPTED_FILE_TYPES[fileType]) {
+      return NextResponse.json(
+        { error: "Unsupported file type" },
+        { status: 400 }
+      );
+    }
+
+    if (fileSize > MAX_FILE_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: "File too large" },
+        { status: 400 }
+      );
+    }
+
+    const { data: company, error: companyError } = await supabase
+      .from("companies")
+      .select("*")
+      .eq("id", companyId)
+      .single();
+
+    if (companyError || !company) {
+      return NextResponse.json(
+        {
+          error: "Company lookup failed",
+          details: companyError
+        },
+        { status: 404 }
+      );
+    }
+
+    const fileId = uuidv4();
+
+    const fileKey = buildFileKey(
+      companyId,
+      fileId,
+      fileName
+    );
+
+    const uploadUrl = await getPresignedUploadUrl(
+      fileKey,
+      fileType
+    );
+
+    return NextResponse.json({
+      fileId,
+      fileKey,
+      uploadUrl
+    });
+  } catch (err: any) {
     return NextResponse.json(
-      { error: "Unsupported file type. Allowed: PDF, DOCX, XLSX, PNG, JPG." },
-      { status: 415 }
+      {
+        error: err?.message || "Unknown error",
+        stack: String(err)
+      },
+      { status: 500 }
     );
   }
-
-  if (fileSize && fileSize > MAX_FILE_SIZE_BYTES) {
-    return NextResponse.json({ error: "File exceeds the 25 MB limit." }, { status: 413 });
-  }
-
-  // Confirm the company belongs to this user before issuing a signed URL.
-  const { data: company, error: companyError } = await supabase
-    .from("companies")
-    .select("id, owner_id")
-    .eq("id", companyId)
-    .single();
-
-  if (companyError || !company || company.owner_id !== user.id) {
-    return NextResponse.json({ error: "Company not found." }, { status: 404 });
-  }
-
-  const fileId = uuidv4();
-  const fileKey = buildFileKey(companyId, fileId, fileName);
-  const uploadUrl = await getPresignedUploadUrl(fileKey, fileType);
-
-  return NextResponse.json({ fileId, fileKey, uploadUrl });
 }
